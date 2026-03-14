@@ -9,6 +9,13 @@ type SessionData = {
   subject: string;
 };
 
+// LaTeX記法 $7x$ を 7x に変換（クライアント側の二重チェック）
+function stripLatex(text: string): string {
+  return text
+    .replace(/\$+([^$]*)\$+/g, "$1")
+    .replace(/\\\$+([^$\\]*)\\\$+/g, "$1");
+}
+
 function ExplainContent() {
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("session");
@@ -41,7 +48,7 @@ function ExplainContent() {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "エラーが発生しました");
-        setExplanation(data.explanation);
+        setExplanation(stripLatex(data.explanation));
         setStepIndex(data.stepIndex);
         setDifficultyLevel(data.difficultyLevel);
         if (data.messages) setMessages(data.messages);
@@ -133,7 +140,7 @@ function ExplainContent() {
             <div className="flex-1 rounded-2xl bg-white p-6 shadow-sm overflow-x-auto">
               <div className="prose prose-slate max-w-none min-w-0">
                 <p className="whitespace-pre-wrap text-slate-700">
-                  {explanation}
+                  {stripLatex(explanation)}
                 </p>
               </div>
             </div>
