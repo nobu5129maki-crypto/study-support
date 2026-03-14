@@ -16,13 +16,23 @@ const DIFFICULTY_PROMPTS: Record<number, string> = {
 
 function buildSystemInstruction(data: SessionData): string {
   const diff = DIFFICULTY_PROMPTS[data.difficultyLevel] ?? DIFFICULTY_PROMPTS[0];
+  const mathSpecific =
+    data.subject === "数学"
+      ? `
+【数学・数式の解説ルール】
+- 数式は1行ずつ丁寧に展開し、各変形の理由を簡潔に添えてください。
+- 分数、累乗、ルート、方程式などは読みやすい形で表記（例：x²、√2、2/3）。
+- 横長の式は途中で改行せず、1行で書ける範囲で示してください。
+- 「まず〜を確認」「次に〜を計算」のように順序立てて説明してください。`
+      : "";
+
   return `あなたは優しい家庭教師です。${data.subject}の質問に答えます。
 
 【重要なルール】
 1. 解説は必ず1ステップずつ進めます。一度に全部説明しないでください。
 2. 各ステップの最後に「ここまで理解できたかな？」と確認する形で終えてください。
 3. 説明は${diff}
-4. 回答は日本語で、簡潔に。`;
+4. 回答は日本語で、簡潔に。${mathSpecific}`;
 }
 
 export async function POST(req: NextRequest) {
@@ -93,7 +103,7 @@ ${updated.problemText}
       contents,
       config: {
         systemInstruction: buildSystemInstruction(updated),
-        maxOutputTokens: 800,
+        maxOutputTokens: 1200,
       },
     });
 
