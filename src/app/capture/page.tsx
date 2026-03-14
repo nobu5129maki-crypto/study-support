@@ -111,6 +111,13 @@ export default function CapturePage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "エラーが発生しました");
+      // サーバーレス対応：sessionStorage に保存してから遷移
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem(
+          `study_session_${data.sessionId}`,
+          JSON.stringify({ problemText: data.problemText, subject: data.subject })
+        );
+      }
       router.push(`/explain?session=${encodeURIComponent(data.sessionId)}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "送信に失敗しました");
