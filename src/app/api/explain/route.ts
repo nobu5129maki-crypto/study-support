@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
-import {
-  getSession,
-  updateSession,
-  type SessionData,
-} from "@/lib/sessions";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+type SessionPayload = {
+  problemText: string;
+  subject: string;
+  messages: Array<{ role: "user" | "assistant"; content: string }>;
+  stepIndex: number;
+  difficultyLevel: number;
+};
 
 const DIFFICULTY_PROMPTS: Record<number, string> = {
   0: "標準的な説明で、専門用語は必要に応じて使ってください。",
@@ -14,7 +17,7 @@ const DIFFICULTY_PROMPTS: Record<number, string> = {
   2: "小学生高学年でも理解できるように、とても易しい言葉で、具体例を多く使って説明してください。",
 };
 
-function buildSystemInstruction(data: SessionData): string {
+function buildSystemInstruction(data: SessionPayload): string {
   const diff = DIFFICULTY_PROMPTS[data.difficultyLevel] ?? DIFFICULTY_PROMPTS[0];
   const mathSpecific =
     data.subject === "数学"
@@ -40,19 +43,24 @@ export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as {
       sessionId?: string;
+      problemText?: string;
+      subject?: string;
+      messages?: Array<{ role: "user" | "assistant"; content: string }>;
+      stepIndex?: number;
+      difficultyLevel?: number;
       action?: "next" | "simplify";
     };
-    const { sessionId, action = "next" } = body;
+    const {
+      sessionId,
+      problemText,
+      subject,
+      messages = [],
+      stepIndex = 0,
+      difficultyLevel = 0,
+      action = "next",
+    } = body;
 
-    if (!sessionId) {
-      return NextResponse.json(
-        { error: "セッションIDが必要です" },
-        { status: 400 }
-      );
-    }
-
-    const session = getSession(sessionId);
-    if (!session) {
+    if (!problemText || !subject) {
       return NextResponse.json(
         { error: "セッションが期限切れです。最初からやり直してください。" },
         { status: 404 }
@@ -66,28 +74,28 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (action === "simplify") {
-      updateSession(sessionId, (s) => {
-        s.difficultyLevel = Math.min(2, s.difficultyLevel + 1);
-      });
-    }
-
-    const updated = getSession(sessionId)!;
+    const session: SessionPayload = {
+      problemText,
+      subject,
+      messages,
+      stepIndex,
+      difficultyLevel: action === "simplify" ? Math.min(2, difficultyLevel + 1) : difficultyLevel,
+    };
 
     const userContent =
-      updated.stepIndex === 0
+      stepIndex === 0
         ? "まず最初のステップから始めてください。"
         : action === "simplify"
           ? "前の説明が難しかったようなので、もっと易しい言葉で同じ内容を説明し直してください。"
           : "前のステップは理解できたとのことなので、次のステップを説明してください。";
 
-    const historyContents = updated.messages.map((m) => ({
+    const historyContents = session.messages.map((m) => ({
       role: (m.role === "user" ? "user" : "model") as "user" | "model",
       parts: [{ text: m.content }],
     }));
 
     const currentUserContent = `【問題】
-${updated.problemText}
+${session.problemText}
 
 この問題を、1ステップずつ解説してください。${userContent}`;
 
@@ -103,35 +111,33 @@ ${updated.problemText}
       model: "gemini-3-flash-preview",
       contents,
       config: {
-        systemInstruction: buildSystemInstruction(updated),
+        systemInstruction: buildSystemInstruction(session),
         maxOutputTokens: 1200,
       },
     });
 
     let content = response.text ?? "";
-    // LaTeX記法 $変数$ を通常テキストに変換（$y$km → y km）
     content = content.replace(/\$([^$]+)\$/g, "$1");
 
-    if (action === "simplify") {
-      // 易しい説明に差し替え。履歴には追加せず、stepIndexもそのまま
-    } else {
-      updateSession(sessionId, (s) => {
-        s.messages.push({
-          role: "user",
-          content: `この問題を、1ステップずつ解説してください。${userContent}`,
-        });
-        s.messages.push({ role: "assistant", content });
-        s.stepIndex += 1;
-      });
-    }
-
-    const stepIndex =
-      action === "simplify" ? updated.stepIndex : updated.stepIndex + 1;
+    const newStepIndex = action === "simplify" ? stepIndex : stepIndex + 1;
+    const newDifficultyLevel = session.difficultyLevel;
 
     return NextResponse.json({
       explanation: content,
-      stepIndex,
-      difficultyLevel: getSession(sessionId)!.difficultyLevel,
+      stepIndex: newStepIndex,
+      difficultyLevel: newDifficultyLevel,
+      // クライアントが次回リクエストで送るための更新済みメッセージ
+      messages:
+        action === "simplify"
+          ? messages
+          : [
+              ...messages,
+              {
+                role: "user" as const,
+                content: `この問題を、1ステップずつ解説してください。${userContent}`,
+              },
+              { role: "assistant" as const, content },
+            ],
     });
   } catch (err) {
     console.error(err);
