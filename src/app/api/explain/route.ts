@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
 
     if (!problemText || !subject) {
       return NextResponse.json(
-        { error: "セッションが期限切れです。最初からやり直してください。" },
+        { error: "問題のデータが読み込めませんでした。ホームからもう一度問題を撮影してください。" },
         { status: 404 }
       );
     }
