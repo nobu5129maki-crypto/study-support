@@ -20,8 +20,9 @@ function buildSystemInstruction(data: SessionData): string {
     data.subject === "数学"
       ? `
 【数学・数式の解説ルール】
+- LaTeX記法（$y$、$x$ など）は使わず、通常のテキストで表記してください。変数は「y」「x」、単位付きは「y km」「x 分」のように書いてください。
 - 数式は1行ずつ丁寧に展開し、各変形の理由を簡潔に添えてください。
-- 分数、累乗、ルート、方程式などは読みやすい形で表記（例：x²、√2、2/3）。
+- 分数、累乗、ルートは読みやすい形で表記（例：x²、√2、2/3）。
 - 横長の式は途中で改行せず、1行で書ける範囲で示してください。
 - 「まず〜を確認」「次に〜を計算」のように順序立てて説明してください。`
       : "";
@@ -107,7 +108,9 @@ ${updated.problemText}
       },
     });
 
-    const content = response.text ?? "";
+    let content = response.text ?? "";
+    // LaTeX記法 $変数$ を通常テキストに変換（$y$km → y km）
+    content = content.replace(/\$([^$]+)\$/g, "$1");
 
     if (action === "simplify") {
       // 易しい説明に差し替え。履歴には追加せず、stepIndexもそのまま
