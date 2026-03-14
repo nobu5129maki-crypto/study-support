@@ -14,6 +14,8 @@ export default function CapturePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   // 撮影枠のサイズ（0.35=小〜1.0=大）。小さいほど1問に絞りやすい
   const [frameScale, setFrameScale] = useState(0.65);
+  // 撮影枠のアスペクト比：square=正方形, landscape=横長(数学向け), portrait=縦長
+  const [frameAspect, setFrameAspect] = useState<"square" | "landscape" | "portrait">("landscape");
 
   // ビデオ要素が表示された後にストリームを設定（真っ暗になる原因を解消）
   useEffect(() => {
@@ -71,8 +73,17 @@ export default function CapturePage() {
     const vw = video.videoWidth;
     const vh = video.videoHeight;
     const scale = Math.max(0.35, Math.min(1, frameScale));
-    const cw = Math.floor(vw * scale);
-    const ch = Math.floor(vh * scale);
+
+    // アスペクト比に応じてクロップ領域を計算（横長=数学向け、縦長=長文向け）
+    const aspectRatios = {
+      square: { w: 1, h: 1 },
+      landscape: { w: 2, h: 1 },  // 横長：数式・横書き問題向け
+      portrait: { w: 1, h: 2 },   // 縦長：長文・縦書き向け
+    };
+    const { w: aw, h: ah } = aspectRatios[frameAspect];
+    const maxDim = Math.min(vw / aw, vh / ah) * scale;
+    const cw = Math.floor(maxDim * aw);
+    const ch = Math.floor(maxDim * ah);
     const cx = Math.floor((vw - cw) / 2);
     const cy = Math.floor((vh - ch) / 2);
 
@@ -82,7 +93,7 @@ export default function CapturePage() {
     const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
     setCapturedImage(dataUrl);
     stopCamera();
-  }, [stopCamera, frameScale]);
+  }, [stopCamera, frameScale, frameAspect]);
 
   const retake = useCallback(() => {
     setCapturedImage(null);
@@ -140,27 +151,64 @@ export default function CapturePage() {
                     muted
                     className="aspect-[3/4] w-full min-h-[300px] object-cover bg-black"
                   />
-                  {/* 撮影枠：中央に表示、サイズは frameScale で調整。枠外は暗く表示 */}
+                  {/* 撮影枠：横長=数学・数式向け、縦長=長文向け */}
                   <div
                     className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 border-4 border-white pointer-events-none"
                     style={{
-                      width: `${frameScale * 100}%`,
-                      height: `${frameScale * 100}%`,
+                      width: frameAspect === "portrait" ? `${frameScale * 50}%` : `${frameScale * 100}%`,
+                      aspectRatio: frameAspect === "landscape" ? "2/1" : frameAspect === "portrait" ? "1/2" : "1",
                       boxShadow: "0 0 0 9999px rgba(0,0,0,0.5)",
                     }}
                   />
-                  <div className="absolute bottom-2 left-2 right-2 flex items-center gap-2 px-3 py-2 rounded-lg bg-black/60 pointer-events-auto">
-                    <span className="text-xs text-white shrink-0">小</span>
-                    <input
-                      type="range"
-                      min="0.35"
-                      max="1"
-                      step="0.05"
-                      value={frameScale}
-                      onChange={(e) => setFrameScale(parseFloat(e.target.value))}
-                      className="flex-1 h-2 accent-indigo-400"
-                    />
-                    <span className="text-xs text-white shrink-0">大</span>
+                  <div className="absolute bottom-2 left-2 right-2 space-y-2">
+                    <div className="flex gap-1 p-1 rounded-lg bg-black/60">
+                      <button
+                        type="button"
+                        onClick={() => setFrameAspect("landscape")}
+                        className={`flex-1 rounded px-2 py-1.5 text-xs font-medium transition ${
+                          frameAspect === "landscape"
+                            ? "bg-indigo-500 text-white"
+                            : "text-white/70 hover:bg-white/20"
+                        }`}
+                      >
+                        横長
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFrameAspect("square")}
+                        className={`flex-1 rounded px-2 py-1.5 text-xs font-medium transition ${
+                          frameAspect === "square"
+                            ? "bg-indigo-500 text-white"
+                            : "text-white/70 hover:bg-white/20"
+                        }`}
+                      >
+                        正方形
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFrameAspect("portrait")}
+                        className={`flex-1 rounded px-2 py-1.5 text-xs font-medium transition ${
+                          frameAspect === "portrait"
+                            ? "bg-indigo-500 text-white"
+                            : "text-white/70 hover:bg-white/20"
+                        }`}
+                      >
+                        縦長
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-black/60">
+                      <span className="text-xs text-white shrink-0">小</span>
+                      <input
+                        type="range"
+                        min="0.35"
+                        max="1"
+                        step="0.05"
+                        value={frameScale}
+                        onChange={(e) => setFrameScale(parseFloat(e.target.value))}
+                        className="flex-1 h-2 accent-indigo-400"
+                      />
+                      <span className="text-xs text-white shrink-0">大</span>
+                    </div>
                   </div>
                 </>
               ) : (
