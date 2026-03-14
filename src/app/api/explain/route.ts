@@ -118,8 +118,10 @@ ${session.problemText}
     });
 
     let content = response.text ?? "";
-    // LaTeX記法 $7x$ $x$ $$...$$ を除去して通常テキストに変換
-    content = content.replace(/\$+([^$]*)\$+/g, "$1");
+    // LaTeX記法 $7x$ \$7x\$ を除去して通常テキストに変換
+    content = content
+      .replace(/\$+([^$]*)\$+/g, "$1")
+      .replace(/\\\$+([^$\\]*)\\\$+/g, "$1");
 
     const newStepIndex = action === "simplify" ? stepIndex : stepIndex + 1;
     const newDifficultyLevel = session.difficultyLevel;
