@@ -4,46 +4,93 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useState, useCallback, Suspense } from "react";
 import Link from "next/link";
 
+type SessionData = {
+  problemText: string;
+  subject: string;
+};
+
 function ExplainContent() {
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("session");
+  const [sessionData, setSessionData] = useState<SessionData | null | "pending">("pending");
   const [explanation, setExplanation] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
+  const [difficultyLevel, setDifficultyLevel] = useState(0);
+  const [messages, setMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
 
   const fetchExplanation = useCallback(
     async (action: "next" | "simplify" = "next") => {
-      if (!sessionId) return;
+      if (!sessionData || sessionData === "pending") return;
       setLoading(true);
       setError(null);
       try {
         const res = await fetch("/api/explain", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId, action }),
+          body: JSON.stringify({
+            sessionId,
+            problemText: sessionData.problemText,
+            subject: sessionData.subject,
+            messages,
+            stepIndex,
+            difficultyLevel,
+            action,
+          }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "エラーが発生しました");
         setExplanation(data.explanation);
         setStepIndex(data.stepIndex);
+        setDifficultyLevel(data.difficultyLevel);
+        if (data.messages) setMessages(data.messages);
       } catch (err) {
         setError(err instanceof Error ? err.message : "解説の取得に失敗しました");
       } finally {
         setLoading(false);
       }
     },
-    [sessionId]
+    [sessionId, sessionData, messages, stepIndex, difficultyLevel]
   );
 
   useEffect(() => {
-    if (sessionId) fetchExplanation();
-  }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!sessionId) return;
+    const stored = typeof window !== "undefined" && sessionStorage.getItem(`study_session_${sessionId}`);
+    if (stored) {
+      try {
+        const data = JSON.parse(stored) as SessionData;
+        setSessionData(data);
+      } catch {
+        setSessionData(null);
+      }
+    } else {
+      setSessionData(null);
+    }
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (sessionData && sessionData !== "pending") fetchExplanation();
+  }, [sessionData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!sessionId) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-4">
         <p className="text-slate-600">セッションが見つかりません</p>
+        <Link
+          href="/"
+          className="rounded-xl bg-indigo-600 px-6 py-3 font-medium text-white"
+        >
+          ホームに戻る
+        </Link>
+      </div>
+    );
+  }
+
+  if (sessionId && sessionData === null) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-4">
+        <p className="text-slate-600">セッションが期限切れです。最初からやり直してください。</p>
         <Link
           href="/"
           className="rounded-xl bg-indigo-600 px-6 py-3 font-medium text-white"
@@ -76,7 +123,7 @@ function ExplainContent() {
           </div>
         )}
 
-        {loading ? (
+        {(loading && !explanation) || sessionData === "pending" ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-4">
             <div className="h-10 w-10 animate-spin rounded-full border-4 border-indigo-200 border-t-indigo-600" />
             <p className="text-slate-600">解説を考えています...</p>
