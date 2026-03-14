@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 export default function CapturePage() {
@@ -13,17 +13,36 @@ export default function CapturePage() {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // ビデオ要素が表示された後にストリームを設定（真っ暗になる原因を解消）
+  useEffect(() => {
+    if (!isCapturing || !streamRef.current || !videoRef.current) return;
+    const video = videoRef.current;
+    const stream = streamRef.current;
+    // DOM 描画後にストリームを設定
+    const id = requestAnimationFrame(() => {
+      video.srcObject = stream;
+      video.play().catch((e) => console.error("Video play error:", e));
+    });
+    return () => cancelAnimationFrame(id);
+  }, [isCapturing]);
+
   const startCamera = useCallback(async () => {
     setError(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment", width: { ideal: 1280 } },
-        audio: false,
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
+      // スマホは背面、PCは前面カメラ。environment が使えない場合は user にフォールバック
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment", width: { ideal: 1280 } },
+          audio: false,
+        });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 } },
+          audio: false,
+        });
       }
+      streamRef.current = stream;
       setIsCapturing(true);
     } catch (err) {
       setError("カメラにアクセスできません。カメラの許可を確認してください。");
@@ -109,9 +128,9 @@ export default function CapturePage() {
                     autoPlay
                     playsInline
                     muted
-                    className="aspect-[3/4] w-full object-cover"
+                    className="aspect-[3/4] w-full min-h-[300px] object-cover bg-black"
                   />
-                  <div className="absolute inset-0 border-4 border-white/50" />
+                  <div className="absolute inset-0 border-4 border-white/50 pointer-events-none" />
                 </>
               ) : (
                 <div className="flex aspect-[3/4] w-full flex-col items-center justify-center gap-4 bg-slate-800 text-slate-400">
