@@ -23,6 +23,7 @@ function buildSystemInstruction(data: SessionPayload): string {
     data.subject === "数学"
       ? `
 【数学・数式の解説ルール】
+- 数式は7x、3yのようにそのまま書いてください。数式をドル記号で囲む表記は禁止です。
 - 数式は1行ずつ丁寧に展開し、各変形の理由を簡潔に添えてください。
 - 分数、累乗、ルートは読みやすい形で表記（例：x²、√2、2/3）。
 - 横長の式は途中で改行せず、1行で書ける範囲で示してください。
@@ -32,7 +33,7 @@ function buildSystemInstruction(data: SessionPayload): string {
   return `あなたは優しい家庭教師です。${data.subject}の質問に答えます。
 
 【重要なルール】
-1. LaTeX記法（$y$、$x$、$$ など）は絶対に使わず、通常のテキストで表記してください。変数は「y」「x」、単位付きは「y km」「x 分」のように書いてください。
+1. 数式・変数はドル記号で囲まず、そのまま書いてください。7x、3y、x²のように。LaTeXの$記法は禁止です。
 2. 解説は必ず1ステップずつ進めます。一度に全部説明しないでください。
 3. 各ステップの最後に「ここまで理解できたかな？」と確認する形で終えてください。
 4. 説明は${diff}
@@ -117,7 +118,8 @@ ${session.problemText}
     });
 
     let content = response.text ?? "";
-    content = content.replace(/\$([^$]+)\$/g, "$1");
+    // LaTeX記法 $7x$ $x$ $$...$$ を除去して通常テキストに変換
+    content = content.replace(/\$+([^$]*)\$+/g, "$1");
 
     const newStepIndex = action === "simplify" ? stepIndex : stepIndex + 1;
     const newDifficultyLevel = session.difficultyLevel;
