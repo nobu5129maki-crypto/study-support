@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "overrides": {
-    "glob": "^11.0.0"
+    "glob": "^13.0.0"
   },
   "scripts": {
     "dev": "next dev",
