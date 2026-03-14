@@ -12,6 +12,8 @@ export default function CapturePage() {
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // 撮影枠のサイズ（0.35=小〜1.0=大）。小さいほど1問に絞りやすい
+  const [frameScale, setFrameScale] = useState(0.65);
 
   // ビデオ要素が表示された後にストリームを設定（真っ暗になる原因を解消）
   useEffect(() => {
@@ -66,13 +68,21 @@ export default function CapturePage() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    ctx.drawImage(video, 0, 0);
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    const scale = Math.max(0.35, Math.min(1, frameScale));
+    const cw = Math.floor(vw * scale);
+    const ch = Math.floor(vh * scale);
+    const cx = Math.floor((vw - cw) / 2);
+    const cy = Math.floor((vh - ch) / 2);
+
+    canvas.width = cw;
+    canvas.height = ch;
+    ctx.drawImage(video, cx, cy, cw, ch, 0, 0, cw, ch);
     const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
     setCapturedImage(dataUrl);
     stopCamera();
-  }, [stopCamera]);
+  }, [stopCamera, frameScale]);
 
   const retake = useCallback(() => {
     setCapturedImage(null);
@@ -130,7 +140,28 @@ export default function CapturePage() {
                     muted
                     className="aspect-[3/4] w-full min-h-[300px] object-cover bg-black"
                   />
-                  <div className="absolute inset-0 border-4 border-white/50 pointer-events-none" />
+                  {/* 撮影枠：中央に表示、サイズは frameScale で調整。枠外は暗く表示 */}
+                  <div
+                    className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 border-4 border-white pointer-events-none"
+                    style={{
+                      width: `${frameScale * 100}%`,
+                      height: `${frameScale * 100}%`,
+                      boxShadow: "0 0 0 9999px rgba(0,0,0,0.5)",
+                    }}
+                  />
+                  <div className="absolute bottom-2 left-2 right-2 flex items-center gap-2 px-3 py-2 rounded-lg bg-black/60 pointer-events-auto">
+                    <span className="text-xs text-white shrink-0">小</span>
+                    <input
+                      type="range"
+                      min="0.35"
+                      max="1"
+                      step="0.05"
+                      value={frameScale}
+                      onChange={(e) => setFrameScale(parseFloat(e.target.value))}
+                      className="flex-1 h-2 accent-indigo-400"
+                    />
+                    <span className="text-xs text-white shrink-0">大</span>
+                  </div>
                 </>
               ) : (
                 <div className="flex aspect-[3/4] w-full flex-col items-center justify-center gap-4 bg-slate-800 text-slate-400">
