@@ -83,8 +83,8 @@ function ExplainContent() {
           </div>
         ) : (
           <>
-            <div className="flex-1 rounded-2xl bg-white p-6 shadow-sm">
-              <div className="prose prose-slate max-w-none">
+            <div className="flex-1 rounded-2xl bg-white p-6 shadow-sm overflow-x-auto">
+              <div className="prose prose-slate max-w-none min-w-0">
                 <p className="whitespace-pre-wrap text-slate-700">
                   {explanation}
                 </p>
