@@ -76,7 +76,7 @@ function ExplainContent() {
   if (!sessionId) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-4">
-        <p className="text-slate-600">セッションが見つかりません</p>
+        <p className="text-slate-600">問題のデータが見つかりません。ホームから問題を撮影してください。</p>
         <Link
           href="/"
           className="rounded-xl bg-indigo-600 px-6 py-3 font-medium text-white"
@@ -90,7 +90,7 @@ function ExplainContent() {
   if (sessionId && sessionData === null) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-4">
-        <p className="text-slate-600">セッションが期限切れです。最初からやり直してください。</p>
+        <p className="text-slate-600">問題のデータが読み込めませんでした。ホームからもう一度問題を撮影してください。</p>
         <Link
           href="/"
           className="rounded-xl bg-indigo-600 px-6 py-3 font-medium text-white"
