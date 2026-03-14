@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
-import { createSession } from "@/lib/sessions";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
@@ -73,7 +72,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const sessionId = createSession(problemText, subject);
+    const sessionId = crypto.randomUUID();
     return NextResponse.json({ sessionId, problemText, subject });
   } catch (err) {
     console.error(err);
