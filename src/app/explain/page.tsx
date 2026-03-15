@@ -9,11 +9,19 @@ type SessionData = {
   subject: string;
 };
 
-// LaTeX記法 $7x$ を 7x に変換（クライアント側の二重チェック）
+// LaTeX記法 $(7x+5)$ $7x$ を除去（複数パスで確実に）
 function stripLatex(text: string): string {
-  return text
-    .replace(/\$+([^$]*)\$+/g, "$1")
-    .replace(/\\\$+([^$\\]*)\\\$+/g, "$1");
+  let result = text;
+  // $...$ パターンを繰り返し除去（ネスト対応）
+  for (let i = 0; i < 5; i++) {
+    const prev = result;
+    result = result
+      .replace(/\$+([^$]*)\$+/g, "$1")
+      .replace(/\\\$+([^$\\]*)\\\$+/g, "$1")
+      .replace(/\\\(([\s\S]*?)\\\)/g, "$1");
+    if (result === prev) break;
+  }
+  return result.replace(/[\$＄]/g, "");
 }
 
 function ExplainContent() {
