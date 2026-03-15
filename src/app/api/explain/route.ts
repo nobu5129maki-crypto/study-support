@@ -36,8 +36,9 @@ function buildSystemInstruction(data: SessionPayload): string {
 1. 数式は7x+5、(7x+5)、x²のようにそのまま書いてください。LaTeX記法（ドル記号やバックスラッシュ括弧で囲む形式）は絶対に使わないでください。
 2. 解説は必ず1ステップずつ進めます。一度に全部説明しないでください。
 3. 各ステップの最後に「ここまで理解できたかな？」と確認する形で終えてください。
-4. 説明は${diff}
-5. 回答は日本語で、簡潔に。${mathSpecific}`;
+4. 解説が完全に終わり、答えが出揃ったら、説明の最後に必ず【解答完了】とだけ書いてください。まだ解答の途中で次のステップがある場合は【解答完了】と書かないでください。
+5. 説明は${diff}
+6. 回答は日本語で、簡潔に。${mathSpecific}`;
 }
 
 export async function POST(req: NextRequest) {
@@ -130,12 +131,15 @@ ${session.problemText}
       if (content === prev) break;
     }
     content = content.replace(/[\$＄﹩\u0024\uFF04\uFE69]/g, "");
+    const isComplete = content.includes("【解答完了】");
+    const cleanContent = content.replace(/【解答完了】/g, "").trim();
 
     const newStepIndex = action === "simplify" ? stepIndex : stepIndex + 1;
     const newDifficultyLevel = session.difficultyLevel;
 
     return NextResponse.json({
-      explanation: content,
+      explanation: cleanContent,
+      isComplete,
       stepIndex: newStepIndex,
       difficultyLevel: newDifficultyLevel,
       // クライアントが次回リクエストで送るための更新済みメッセージ
@@ -148,7 +152,7 @@ ${session.problemText}
                 role: "user" as const,
                 content: `この問題を、1ステップずつ解説してください。${userContent}`,
               },
-              { role: "assistant" as const, content },
+              { role: "assistant" as const, content: content },
             ],
     });
   } catch (err) {
