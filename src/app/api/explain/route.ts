@@ -95,10 +95,11 @@ export async function POST(req: NextRequest) {
       parts: [{ text: m.content }],
     }));
 
+    const noLatexNote = session.subject === "数学" ? "\n【重要】数式は7x、(7x+5)のようにそのまま書いてください。ドル記号で囲まないでください。" : "";
     const currentUserContent = `【問題】
 ${session.problemText}
 
-この問題を、1ステップずつ解説してください。${userContent}`;
+この問題を、1ステップずつ解説してください。${userContent}${noLatexNote}`;
 
     const contents = [
       ...historyContents,
@@ -118,16 +119,17 @@ ${session.problemText}
     });
 
     let content = response.text ?? "";
-    // LaTeX記法 $(7x+5)$ $7x$ を除去（複数パス）
-    for (let i = 0; i < 5; i++) {
+    // LaTeX記法を完全除去
+    const L = "\uE001", R = "\uE002";
+    content = content.replace(/&#36;/g, "$").replace(/\\\(/g, L).replace(/\\\)/g, R);
+    for (let i = 0; i < 10; i++) {
       const prev = content;
       content = content
-        .replace(/\$+([^$]*)\$+/g, "$1")
-        .replace(/\\\$+([^$\\]*)\\\$+/g, "$1")
-        .replace(/\\\(([\s\S]*?)\\\)/g, "$1");
+        .replace(/\$+([^$]*?)\$+/g, "$1")
+        .replace(new RegExp(L + "([\\s\\S]*?)" + R, "g"), "$1");
       if (content === prev) break;
     }
-    content = content.replace(/[\$＄]/g, "");
+    content = content.replace(/[\$＄﹩\u0024\uFF04\uFE69]/g, "");
 
     const newStepIndex = action === "simplify" ? stepIndex : stepIndex + 1;
     const newDifficultyLevel = session.difficultyLevel;
