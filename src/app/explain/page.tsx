@@ -1,8 +1,9 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState, useCallback, Suspense } from "react";
+import { useEffect, useState, useCallback, Suspense, useRef } from "react";
 import Link from "next/link";
+import { FlowerConfetti } from "@/components/FlowerConfetti";
 
 type SessionData = {
   problemText: string;
@@ -38,6 +39,9 @@ function ExplainContent() {
   const [stepIndex, setStepIndex] = useState(0);
   const [difficultyLevel, setDifficultyLevel] = useState(0);
   const [messages, setMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
+  const [showConfetti, setShowConfetti] = useState(false);
+  const [isComplete, setIsComplete] = useState(false);
+  const hasShownConfetti = useRef(false);
 
   const fetchExplanation = useCallback(
     async (action: "next" | "simplify" = "next") => {
@@ -64,6 +68,13 @@ function ExplainContent() {
         setStepIndex(data.stepIndex);
         setDifficultyLevel(data.difficultyLevel);
         if (data.messages) setMessages(data.messages);
+        if (data.isComplete) {
+          setIsComplete(true);
+          if (!hasShownConfetti.current) {
+            hasShownConfetti.current = true;
+            setShowConfetti(true);
+          }
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "解説の取得に失敗しました");
       } finally {
@@ -122,6 +133,7 @@ function ExplainContent() {
 
   return (
     <div className="flex min-h-screen flex-col bg-gradient-to-b from-sky-50 to-indigo-50">
+      {showConfetti && <FlowerConfetti onComplete={() => setShowConfetti(false)} />}
       <header className="flex items-center gap-4 border-b border-slate-200 bg-white/80 p-4 backdrop-blur">
         <Link
           href="/"
@@ -159,7 +171,7 @@ function ExplainContent() {
 
             <div className="mt-6 flex flex-col gap-3">
               <p className="text-center text-sm font-medium text-slate-600">
-                ここまで理解できたかな？
+                {isComplete ? "お疲れさまでした！" : "ここまで理解できたかな？"}
               </p>
               <div className="flex gap-3">
                 <button
@@ -169,14 +181,22 @@ function ExplainContent() {
                 >
                   もう少しわかりやすく教えて
                 </button>
-                <button
-                  onClick={() => fetchExplanation("next")}
-                  disabled={loading}
-                  className="flex-1 rounded-xl bg-indigo-600 py-4 font-medium text-white transition hover:bg-indigo-700 disabled:opacity-50"
-                >
-                  わかった！次へ
-                </button>
+                {!isComplete && (
+                  <button
+                    onClick={() => fetchExplanation("next")}
+                    disabled={loading}
+                    className="flex-1 rounded-xl bg-indigo-600 py-4 font-medium text-white transition hover:bg-indigo-700 disabled:opacity-50"
+                  >
+                    わかった！次へ
+                  </button>
+                )}
               </div>
+              <Link
+                href="/capture"
+                className="mt-2 flex items-center justify-center gap-2 rounded-xl border-2 border-indigo-200 py-3 font-medium text-indigo-600 transition hover:border-indigo-300 hover:bg-indigo-50"
+              >
+                📷 カメラ撮影に戻る
+              </Link>
             </div>
           </>
         )}
