@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+function getGenAI(): GoogleGenAI {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) {
+    throw new Error("GEMINI_API_KEY is not set");
+  }
+  return new GoogleGenAI({ apiKey: key });
+}
 
 type SessionPayload = {
   problemText: string;
@@ -75,6 +84,8 @@ export async function POST(req: NextRequest) {
         { status: 500 }
       );
     }
+
+    const ai = getGenAI();
 
     const session: SessionPayload = {
       problemText,
