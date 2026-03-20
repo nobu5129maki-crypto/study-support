@@ -8,8 +8,10 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* layout の next/font で付与される変数（未定義の geist 変数は Tailwind v4 ビルドエラーの原因になる） */
+  --font-sans: var(--font-noto-sans-jp), ui-sans-serif, system-ui, "Segoe UI",
+    "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Meiryo", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
