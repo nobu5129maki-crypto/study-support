@@ -1,16 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenAI } from "@google/genai";
+import { createGoogleGenAI } from "@/lib/google-genai";
+import { normalizeMathSymbols } from "@/lib/mathNotation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function getGenAI(): GoogleGenAI {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) {
-    throw new Error("GEMINI_API_KEY is not set");
-  }
-  return new GoogleGenAI({ apiKey: key });
-}
 
 type SessionPayload = {
   problemText: string;
@@ -33,21 +26,32 @@ function buildSystemInstruction(data: SessionPayload): string {
       ? `
 【数学・数式の解説ルール】
 - 数式は7x+5、(7x+5)のようにそのまま書いてください。$や\(\)で囲まないこと。
+- 掛け算は必ず「×」を使ってください（半角*は使わない）。割り算は必ず「÷」を使ってください（式の割り算に半角/は使わない）。
+- 分数だけは「2/3」のようにスラッシュ表記してもよい。それ以外の割り算は÷で書く。
 - 数式は1行ずつ丁寧に展開し、各変形の理由を簡潔に添えてください。
-- 分数、累乗、ルートは読みやすい形で表記（例：x²、√2、2/3）。
+- 累乗、ルートは読みやすい形で表記（例：x²、√2）。
 - 横長の式は途中で改行せず、1行で書ける範囲で示してください。
 - 「まず〜を確認」「次に〜を計算」のように順序立てて説明してください。`
       : "";
 
   return `あなたは優しい家庭教師です。${data.subject}の質問に答えます。
 
+【全科目共通・段階的解説（最優先）】
+- いきなり「最終答え」「正解」「結論」「完成した答案」は出さない。特に最初の数回の返答では、答え・正しい選択肢・計算結果の数値・作文の全文などを述べない。
+- 選択問題：最初から「答えは○番」「正解は〜」と言わない。まず問題の読み方・与えられた条件の整理・考え方の第1歩だけ。
+- 計算・式・証明：最終結果や答えの数値を初回ステップで書かない。読み取り・式の立て方・最初の変形の1つだけなどにとどめる。
+- 国語（読解・文法・漢字など）：一気に解説し尽くさない。段落の意味・語句の見方・設問の狙いの一部だけなど、今ステップの範囲だけ。
+- 英語（文法・長文・英作文など）：訳文全文・模範解答の全文を一度に出さない。文の構造の一部・語句の意味・第1文の読み方などから始める。
+- 理科・社会：結論だけや暗記答案の羅列を最初に出さない。図・グラフ・資料の読み取り・用語の確認・思考の第1歩から。
+- 解説は必ず1ステップずつ。まだ続きがあるうちは【解答完了】を絶対に書かない。
+- 各ステップの最後は「ここまで理解できたかな？」などで区切る。
+
 【重要なルール】
-1. 数式は7x+5、(7x+5)、x²のようにそのまま書いてください。LaTeX記法（ドル記号やバックスラッシュ括弧で囲む形式）は絶対に使わないでください。
-2. 解説は必ず1ステップずつ進めます。一度に全部説明しないでください。
-3. 各ステップの最後に「ここまで理解できたかな？」と確認する形で終えてください。
-4. 解説が完全に終わり、答えが出揃ったら、説明の最後に必ず【解答完了】とだけ書いてください。まだ解答の途中で次のステップがある場合は【解答完了】と書かないでください。
-5. 説明は${diff}
-6. 回答は日本語で、簡潔に。${mathSpecific}`;
+1. 数学では数式は7x+5、(7x+5)、x²のようにそのまま書く。掛け算は×、割り算は÷（*や式中の/は使わない）。LaTeX記法（ドル記号やバックスラッシュ括弧で囲む形式）は使わない。数学以外で数式が出る場合も同様に、LaTeXは使わない。
+2. 上記「全科目共通」と矛盾するなら、常に「段階的・答えを出さない」を優先する。
+3. 解説が完全に終わり、すべての設問の答えが出揃ったときだけ、説明の最後に必ず【解答完了】とだけ書く。途中のステップでは【解答完了】を書かない。
+4. 説明のトーンは${diff}
+5. 回答は日本語で、今のステップに必要な分だけ簡潔に。${mathSpecific}`;
 }
 
 export async function POST(req: NextRequest) {
@@ -78,6 +82,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const problemTextNorm = normalizeMathSymbols(problemText.trim());
+
     if (!process.env.GEMINI_API_KEY) {
       return NextResponse.json(
         { error: "GEMINI_API_KEY が設定されていません" },
@@ -85,10 +91,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const ai = getGenAI();
+    const ai = await createGoogleGenAI(process.env.GEMINI_API_KEY);
 
     const session: SessionPayload = {
-      problemText,
+      problemText: problemTextNorm,
       subject,
       messages,
       stepIndex,
@@ -97,10 +103,10 @@ export async function POST(req: NextRequest) {
 
     const userContent =
       stepIndex === 0
-        ? "まず最初のステップから始めてください。"
+        ? "【今回の範囲】最初のステップだけにしてください。問題の読み取り・条件整理・考え方の第1歩まで。最終答え・正解・数値の結果・選択肢の断定・作文の全文などはまだ出さないでください。"
         : action === "simplify"
-          ? "前の説明が難しかったようなので、もっと易しい言葉で同じ内容を説明し直してください。"
-          : "前のステップは理解できたとのことなので、次のステップを説明してください。";
+          ? "前の説明が難しかったようなので、もっと易しい言葉で同じ内容を説明し直してください。いきなり答えや結論だけを出さないでください。"
+          : "前のステップは理解できたとのことなので、次の1ステップだけ説明してください。まだ途中なら最終答えや【解答完了】は出さないでください。";
 
     const historyContents = session.messages.map((m) => ({
       role: (m.role === "user" ? "user" : "model") as "user" | "model",
@@ -111,7 +117,7 @@ export async function POST(req: NextRequest) {
     const currentUserContent = `【問題】
 ${session.problemText}
 
-この問題を、1ステップずつ解説してください。${userContent}${noLatexNote}`;
+この問題を、全科目共通ルールに従い1ステップずつ解説してください。いきなり答えを出さないこと。${userContent}${noLatexNote}`;
 
     const contents = [
       ...historyContents,
@@ -142,6 +148,7 @@ ${session.problemText}
       if (content === prev) break;
     }
     content = content.replace(/[\$＄﹩\u0024\uFF04\uFE69]/g, "");
+    content = normalizeMathSymbols(content);
     const isComplete = content.includes("【解答完了】");
     const cleanContent = content.replace(/【解答完了】/g, "").trim();
 
@@ -161,7 +168,7 @@ ${session.problemText}
               ...messages,
               {
                 role: "user" as const,
-                content: `この問題を、1ステップずつ解説してください。${userContent}`,
+                content: `この問題を、全科目共通ルールに従い1ステップずつ解説してください。いきなり答えを出さないこと。${userContent}`,
               },
               { role: "assistant" as const, content: content },
             ],
