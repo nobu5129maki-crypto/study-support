@@ -132,7 +132,8 @@ ${session.problemText}
       contents,
       config: {
         systemInstruction: buildSystemInstruction(session),
-        maxOutputTokens: 1200,
+        // 短すぎると解説が文の途中で切れるため十分な余裕を確保
+        maxOutputTokens: 8192,
       },
     });
 
