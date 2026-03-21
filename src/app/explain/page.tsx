@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useState, useCallback, Suspense, useRef } from "react";
 import Link from "next/link";
 import { FlowerConfetti } from "@/components/FlowerConfetti";
+import { normalizeMathSymbols } from "@/lib/mathNotation";
 
 type SessionData = {
   problemText: string;
@@ -26,7 +27,9 @@ function stripLatex(text: string): string {
     if (result === prev) break;
   }
   // 残った$系文字を全て除去（半角・全角・その他）
-  return result.replace(/[\$＄﹩\u0024\uFF04\uFE69]/g, "").trim();
+  return normalizeMathSymbols(
+    result.replace(/[\$＄﹩\u0024\uFF04\uFE69]/g, "").trim()
+  );
 }
 
 function ExplainContent() {
@@ -41,11 +44,15 @@ function ExplainContent() {
   const [messages, setMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
   const [showConfetti, setShowConfetti] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
+  const [loadingAction, setLoadingAction] = useState<"next" | "simplify" | null>(
+    null
+  );
   const hasShownConfetti = useRef(false);
 
   const fetchExplanation = useCallback(
     async (action: "next" | "simplify" = "next") => {
       if (!sessionData || sessionData === "pending") return;
+      setLoadingAction(action);
       setLoading(true);
       setError(null);
       try {
@@ -79,6 +86,7 @@ function ExplainContent() {
         setError(err instanceof Error ? err.message : "解説の取得に失敗しました");
       } finally {
         setLoading(false);
+        setLoadingAction(null);
       }
     },
     [sessionId, sessionData, messages, stepIndex, difficultyLevel]
@@ -131,10 +139,14 @@ function ExplainContent() {
     );
   }
 
+  const isInitialLoad =
+    sessionData === "pending" || (loading && !explanation);
+  const isFetchingNext = loading && !!explanation;
+
   return (
-    <div className="flex min-h-screen flex-col bg-gradient-to-b from-sky-50 to-indigo-50">
+    <div className="flex min-h-[100dvh] min-h-screen flex-col bg-gradient-to-b from-sky-50 to-indigo-50">
       {showConfetti && <FlowerConfetti onComplete={() => setShowConfetti(false)} />}
-      <header className="flex items-center gap-4 border-b border-slate-200 bg-white/80 p-4 backdrop-blur">
+      <header className="flex shrink-0 items-center gap-4 border-b border-slate-200 bg-white/80 p-4 backdrop-blur">
         <Link
           href="/"
           className="rounded-full p-2 text-slate-600 hover:bg-slate-100"
@@ -144,56 +156,92 @@ function ExplainContent() {
         </Link>
         <h1 className="text-lg font-semibold text-slate-800">
           解説（ステップ {stepIndex}）
+          {isFetchingNext && (
+            <span className="ml-2 inline-block h-2 w-2 animate-pulse rounded-full bg-indigo-500 align-middle" aria-hidden />
+          )}
         </h1>
       </header>
 
-      <main className="flex flex-1 flex-col p-4">
+      <main className="flex min-h-0 flex-1 flex-col p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
         {error && (
-          <div className="mb-4 rounded-xl bg-red-100 p-4 text-red-700">
+          <div className="mb-4 shrink-0 rounded-xl bg-red-100 p-4 text-red-700">
             {error}
           </div>
         )}
 
-        {(loading && !explanation) || sessionData === "pending" ? (
+        {isInitialLoad ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-4">
-            <div className="h-10 w-10 animate-spin rounded-full border-4 border-indigo-200 border-t-indigo-600" />
-            <p className="text-slate-600">解説を考えています...</p>
+            <div
+              className="h-12 w-12 animate-spin rounded-full border-4 border-indigo-200 border-t-indigo-600"
+              role="status"
+              aria-label="読み込み中"
+            />
+            <p className="text-center text-slate-600">解説を考えています…</p>
+            <p className="max-w-xs text-center text-sm text-slate-500">
+              初回は数十秒かかることがあります
+            </p>
           </div>
         ) : (
           <>
-            <div className="flex-1 rounded-2xl bg-white p-6 shadow-sm overflow-x-auto">
-              <div className="prose prose-slate max-w-none min-w-0">
-                <p className="whitespace-pre-wrap text-slate-700">
+            {/* min-h-0 + overflow-y で長文を切らず縦スクロール */}
+            <div className="relative min-h-0 flex-1">
+              <div className="h-full min-h-[12rem] overflow-y-auto overflow-x-auto rounded-2xl bg-white p-5 shadow-sm sm:p-6">
+                <p className="whitespace-pre-wrap break-words text-base leading-relaxed text-slate-800 [overflow-wrap:anywhere]">
                   {stripLatex(explanation)}
                 </p>
               </div>
+              {/* 「次へ」後も前の文が見える＋進行が分かるオーバーレイ */}
+              {isFetchingNext && (
+                <div
+                  className="absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-2xl bg-white/90 px-4 backdrop-blur-[2px]"
+                  role="status"
+                  aria-live="polite"
+                  aria-busy="true"
+                >
+                  <div className="h-12 w-12 animate-spin rounded-full border-4 border-indigo-200 border-t-indigo-600" />
+                  <p className="text-center font-medium text-slate-800">
+                    {loadingAction === "simplify"
+                      ? "わかりやすい説明を準備しています…"
+                      : "次のステップを準備しています…"}
+                  </p>
+                  <p className="max-w-[280px] text-center text-sm text-slate-600">
+                    通信中です。下に前の説明が透けて見えていれば正常に進んでいます。
+                  </p>
+                </div>
+              )}
             </div>
 
-            <div className="mt-6 flex flex-col gap-3">
+            <div className="mt-4 flex shrink-0 flex-col gap-3">
               <p className="text-center text-sm font-medium text-slate-600">
                 {isComplete ? "お疲れさまでした！" : "ここまで理解できたかな？"}
               </p>
               <div className="flex gap-3">
                 <button
+                  type="button"
                   onClick={() => fetchExplanation("simplify")}
                   disabled={loading}
-                  className="flex-1 rounded-xl border-2 border-slate-300 py-4 font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 disabled:opacity-50"
+                  className="flex-1 rounded-xl border-2 border-slate-300 py-4 font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
                 >
-                  もう少しわかりやすく教えて
+                  {isFetchingNext && loadingAction === "simplify"
+                    ? "説明し直し中…"
+                    : "もう少しわかりやすく教えて"}
                 </button>
                 {!isComplete && (
                   <button
+                    type="button"
                     onClick={() => fetchExplanation("next")}
                     disabled={loading}
-                    className="flex-1 rounded-xl bg-indigo-600 py-4 font-medium text-white transition hover:bg-indigo-700 disabled:opacity-50"
+                    className="flex-1 rounded-xl bg-indigo-600 py-4 font-medium text-white transition hover:bg-indigo-700 disabled:cursor-wait disabled:opacity-90"
                   >
-                    わかった！次へ
+                    {isFetchingNext && loadingAction === "next"
+                      ? "次へ進行中…"
+                      : "わかった！次へ"}
                   </button>
                 )}
               </div>
               <Link
                 href="/capture"
-                className="mt-2 flex items-center justify-center gap-2 rounded-xl border-2 border-indigo-200 py-3 font-medium text-indigo-600 transition hover:border-indigo-300 hover:bg-indigo-50"
+                className="mt-1 flex items-center justify-center gap-2 rounded-xl border-2 border-indigo-200 py-3 font-medium text-indigo-600 transition hover:border-indigo-300 hover:bg-indigo-50"
               >
                 📷 カメラ撮影に戻る
               </Link>
