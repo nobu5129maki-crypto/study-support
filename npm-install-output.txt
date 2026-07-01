@@ -1,0 +1,14 @@
+﻿node.exe : npm error code ENOTEMPTY
+発生場所 行:1 文字:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (npm error code ENOTEMPTY:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+npm error syscall rmdir
+npm error path C:\Users\Admin\Desktop\閾ｪ菴懊い繝励Μ陬ｽ蜩―study-support\node_modules\next\dist
+npm error errno -4051
+npm error ENOTEMPTY: directory not empty, rmdir 'C:\Users\Admin\Desktop\閾ｪ菴懊い繝励Μ陬ｽ蜩―study-support\node_modules\next\dis
+t'
+npm error A complete log of this run can be found in: C:\Users\Admin\AppData\Local\npm-cache\_logs\2026-03-18T14_07_29_
+832Z-debug-0.log
