@@ -1,16 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenAI } from "@google/genai";
+import { createGoogleGenAI } from "@/lib/google-genai";
+import { normalizeMathSymbols } from "@/lib/mathNotation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function getGenAI(): GoogleGenAI {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) {
-    throw new Error("GEMINI_API_KEY is not set");
-  }
-  return new GoogleGenAI({ apiKey: key });
-}
 
 export async function POST(req: NextRequest) {
   try {
@@ -29,7 +22,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const ai = getGenAI();
+    const ai = await createGoogleGenAI(process.env.GEMINI_API_KEY);
 
     const base64 = image.replace(/^data:image\/\w+;base64,/, "");
     const mimeMatch = image.match(/^data:(image\/\w+);base64,/);
@@ -55,7 +48,7 @@ export async function POST(req: NextRequest) {
 }
 
 【重要な指示】
-- 数学・数式の場合：数式、方程式、グラフ、図形などは正確に読み取り、分数は a/b、累乗は a^b、ルートは √(x) のように表記してください。横に長く書かれた式も省略せず全文を転記してください。
+- 数学・数式の場合：数式、方程式、グラフ、図形などは正確に読み取り、累乗は a^b、ルートは √(x) のように表記してください。掛け算は×、割り算は÷（半角*や式の半角/は使わない）。分数だけは a/b の形でもよい。横に長く書かれた式も省略せず全文を転記してください。
 - 横長の文章や数式は改行せず、元の並び順を保ってください。
 - 画像が読み取れない、問題が写っていない場合は problem を空文字にしてください。`,
             },
@@ -73,7 +66,7 @@ export async function POST(req: NextRequest) {
       parsed = { problem: content, subject: "その他" };
     }
 
-    const problemText = (parsed.problem ?? "").trim();
+    const problemText = normalizeMathSymbols((parsed.problem ?? "").trim());
     const subject = parsed.subject ?? "その他";
 
     if (!problemText) {

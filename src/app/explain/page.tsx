@@ -11,6 +11,14 @@ type SessionData = {
   subject: string;
 };
 
+type ExplanationSnapshot = {
+  explanation: string;
+  stepIndex: number;
+  difficultyLevel: number;
+  messages: Array<{ role: "user" | "assistant"; content: string }>;
+  isComplete: boolean;
+};
+
 // LaTeX記法を完全除去（$7x$ $(7x+5)$ など）
 function stripLatex(text: string): string {
   if (!text) return text;
@@ -47,7 +55,22 @@ function ExplainContent() {
   const [loadingAction, setLoadingAction] = useState<"next" | "simplify" | null>(
     null
   );
+  const [history, setHistory] = useState<ExplanationSnapshot[]>([]);
   const hasShownConfetti = useRef(false);
+
+  const goBackToPrevious = useCallback(() => {
+    setHistory((prev) => {
+      if (prev.length === 0) return prev;
+      const snapshot = prev[prev.length - 1];
+      setExplanation(snapshot.explanation);
+      setStepIndex(snapshot.stepIndex);
+      setDifficultyLevel(snapshot.difficultyLevel);
+      setMessages(snapshot.messages);
+      setIsComplete(snapshot.isComplete);
+      setError(null);
+      return prev.slice(0, -1);
+    });
+  }, []);
 
   const fetchExplanation = useCallback(
     async (action: "next" | "simplify" = "next") => {
@@ -55,6 +78,9 @@ function ExplainContent() {
       setLoadingAction(action);
       setLoading(true);
       setError(null);
+      const snapshot: ExplanationSnapshot | null = explanation
+        ? { explanation, stepIndex, difficultyLevel, messages, isComplete }
+        : null;
       try {
         const res = await fetch("/api/explain", {
           method: "POST",
@@ -71,6 +97,9 @@ function ExplainContent() {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "エラーが発生しました");
+        if (snapshot) {
+          setHistory((prev) => [...prev, snapshot]);
+        }
         setExplanation(stripLatex(data.explanation));
         setStepIndex(data.stepIndex);
         setDifficultyLevel(data.difficultyLevel);
@@ -89,7 +118,7 @@ function ExplainContent() {
         setLoadingAction(null);
       }
     },
-    [sessionId, sessionData, messages, stepIndex, difficultyLevel]
+    [sessionId, sessionData, messages, stepIndex, difficultyLevel, explanation, isComplete]
   );
 
   useEffect(() => {
@@ -239,6 +268,16 @@ function ExplainContent() {
                   </button>
                 )}
               </div>
+              {history.length > 0 && (
+                <button
+                  type="button"
+                  onClick={goBackToPrevious}
+                  disabled={loading}
+                  className="rounded-xl border-2 border-slate-200 py-3 font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
+                >
+                  ← ひとつ前の解説に戻る
+                </button>
+              )}
               <Link
                 href="/capture"
                 className="mt-1 flex items-center justify-center gap-2 rounded-xl border-2 border-indigo-200 py-3 font-medium text-indigo-600 transition hover:border-indigo-300 hover:bg-indigo-50"
