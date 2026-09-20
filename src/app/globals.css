@@ -24,8 +24,9 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  /* layout.tsx で読み込む Noto Sans JP を使う（Arial 固定だと日本語フォント指定が無効になっていた） */
-  font-family: var(--font-sans);
+  /* font-family はここで指定しない。
+     layout.tsx の body に付く font-sans ユーティリティ（Noto Sans JP）を有効にするため。
+     ここに Arial 等を書くとユーティリティより優先されて日本語フォント指定が無効になる。 */
 }
 
 @keyframes flower-fall {
