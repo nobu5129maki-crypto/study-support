@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createGoogleGenAI } from "@/lib/google-genai";
+import {
+  createGoogleGenAI,
+  generateContentWithFallback,
+  GenAIRequestError,
+} from "@/lib/google-genai";
 import { normalizeMathSymbols } from "@/lib/mathNotation";
 
 export const runtime = "nodejs";
@@ -28,8 +32,7 @@ export async function POST(req: NextRequest) {
     const mimeMatch = image.match(/^data:(image\/\w+);base64,/);
     const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+    const response = await generateContentWithFallback(ai, {
       contents: [
         {
           role: "user",
@@ -79,6 +82,9 @@ export async function POST(req: NextRequest) {
     const sessionId = crypto.randomUUID();
     return NextResponse.json({ sessionId, problemText, subject });
   } catch (err) {
+    if (err instanceof GenAIRequestError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
     console.error(err);
     return NextResponse.json(
       { error: "解析中にエラーが発生しました" },

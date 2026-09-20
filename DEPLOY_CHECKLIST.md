@@ -17,6 +17,15 @@
 | `next.config.js` | Next.js 設定 |
 | `.eslintrc.json` | ESLint 設定 |
 | `src/app/api/explain/route.ts` | 解説 API（`page.tsx` ではない） |
+| `scripts/check-app-router-conflicts.mjs` | `npm run build` 前に自動実行されるチェック（`prebuild`）。無いとビルドが失敗する |
+
+## Node.js バージョン
+
+`package.json` の `engines.node` は `24.x`。Vercel では Node.js 20.x が 2026-10-01 以降ビルド不可のため、20.x に戻さないこと。
+
+## Gemini API の利用上限
+
+無料枠では `gemini-3-flash-preview` の 1 日あたりのリクエスト数が少ない（20 回程度）。上限に達すると自動で `gemini-3.6-flash` 等の予備モデルに切り替わる（`src/lib/google-genai.ts` の `MODEL_CANDIDATES`）。本格運用する場合は Google AI Studio で課金を有効にする。
 
 ## 確認手順
 

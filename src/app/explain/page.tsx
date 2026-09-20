@@ -4,7 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useState, useCallback, Suspense, useRef } from "react";
 import Link from "next/link";
 import { FlowerConfetti } from "@/components/FlowerConfetti";
-import { normalizeMathSymbols } from "@/lib/mathNotation";
+import { cleanExplanation } from "@/lib/cleanExplanation";
 
 type SessionData = {
   problemText: string;
@@ -18,27 +18,6 @@ type ExplanationSnapshot = {
   messages: Array<{ role: "user" | "assistant"; content: string }>;
   isComplete: boolean;
 };
-
-// LaTeX記法を完全除去（$7x$ $(7x+5)$ など）
-function stripLatex(text: string): string {
-  if (!text) return text;
-  const L = "\uE001", R = "\uE002";  // 一時プレースホルダ
-  let result = text
-    .replace(/&#36;/g, "$")
-    .replace(/\\\(/g, L)
-    .replace(/\\\)/g, R);
-  for (let i = 0; i < 10; i++) {
-    const prev = result;
-    result = result
-      .replace(/\$+([^$]*?)\$+/g, "$1")
-      .replace(new RegExp(L + "([\\s\\S]*?)" + R, "g"), "$1");
-    if (result === prev) break;
-  }
-  // 残った$系文字を全て除去（半角・全角・その他）
-  return normalizeMathSymbols(
-    result.replace(/[\$＄﹩\u0024\uFF04\uFE69]/g, "").trim()
-  );
-}
 
 function ExplainContent() {
   const searchParams = useSearchParams();
@@ -95,12 +74,23 @@ function ExplainContent() {
             action,
           }),
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "エラーが発生しました");
+        // タイムアウト等で JSON 以外が返った場合も分かりやすいエラーにする
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(
+            data.error ||
+              (res.status >= 500
+                ? "サーバーが混み合っています。少し待ってからもう一度お試しください。"
+                : "エラーが発生しました")
+          );
+        }
+        if (typeof data.explanation !== "string") {
+          throw new Error("解説の取得に失敗しました。もう一度お試しください。");
+        }
         if (snapshot) {
           setHistory((prev) => [...prev, snapshot]);
         }
-        setExplanation(stripLatex(data.explanation));
+        setExplanation(cleanExplanation(data.explanation ?? ""));
         setStepIndex(data.stepIndex);
         setDifficultyLevel(data.difficultyLevel);
         if (data.messages) setMessages(data.messages);
@@ -142,8 +132,8 @@ function ExplainContent() {
 
   if (!sessionId) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-4">
-        <p className="text-slate-600">問題のデータが見つかりません。ホームから問題を撮影してください。</p>
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-gradient-to-b from-sky-50 to-indigo-50 p-4">
+        <p className="text-center text-slate-600">問題のデータが見つかりません。ホームから問題を撮影してください。</p>
         <Link
           href="/"
           className="rounded-xl bg-indigo-600 px-6 py-3 font-medium text-white"
@@ -156,8 +146,8 @@ function ExplainContent() {
 
   if (sessionId && sessionData === null) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-4">
-        <p className="text-slate-600">問題のデータが読み込めませんでした。ホームからもう一度問題を撮影してください。</p>
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-gradient-to-b from-sky-50 to-indigo-50 p-4">
+        <p className="text-center text-slate-600">問題のデータが読み込めませんでした。ホームからもう一度問題を撮影してください。</p>
         <Link
           href="/"
           className="rounded-xl bg-indigo-600 px-6 py-3 font-medium text-white"
@@ -216,7 +206,7 @@ function ExplainContent() {
             <div className="relative min-h-0 flex-1">
               <div className="h-full min-h-[12rem] overflow-y-auto overflow-x-auto rounded-2xl bg-white p-5 shadow-sm sm:p-6">
                 <p className="whitespace-pre-wrap break-words text-base leading-relaxed text-slate-800 [overflow-wrap:anywhere]">
-                  {stripLatex(explanation)}
+                  {explanation}
                 </p>
               </div>
               {/* 「次へ」後も前の文が見える＋進行が分かるオーバーレイ */}
@@ -296,7 +286,7 @@ export default function ExplainPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-screen items-center justify-center">
+        <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-sky-50 to-indigo-50">
           <div className="h-10 w-10 animate-spin rounded-full border-4 border-indigo-200 border-t-indigo-600" />
         </div>
       }

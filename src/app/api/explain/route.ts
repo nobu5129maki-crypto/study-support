@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createGoogleGenAI } from "@/lib/google-genai";
+import {
+  createGoogleGenAI,
+  generateContentWithFallback,
+  GenAIRequestError,
+} from "@/lib/google-genai";
 import { normalizeMathSymbols } from "@/lib/mathNotation";
+import { cleanExplanation } from "@/lib/cleanExplanation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,7 +56,9 @@ function buildSystemInstruction(data: SessionPayload): string {
 2. 上記「全科目共通」と矛盾するなら、常に「段階的・答えを出さない」を優先する。
 3. 解説が完全に終わり、すべての設問の答えが出揃ったときだけ、説明の最後に必ず【解答完了】とだけ書く。途中のステップでは【解答完了】を書かない。
 4. 説明のトーンは${diff}
-5. 回答は日本語で、今のステップに必要な分だけ簡潔に。${mathSpecific}`;
+5. 回答は日本語で、今のステップに必要な分だけ簡潔に。
+6. 出力はプレーンテキストのみ。Markdown記法（**太字**、# 見出し、行頭の * や - の箇条書き、\`コード\`、表）は使わない。箇条書きが必要なときは「・」または「1.」を使う。
+7. 単位は km/h、m/s のように書いてよい（これは割り算ではなく単位）。${mathSpecific}`;
 }
 
 export async function POST(req: NextRequest) {
@@ -127,8 +134,7 @@ ${session.problemText}
       },
     ];
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+    const response = await generateContentWithFallback(ai, {
       contents,
       config: {
         systemInstruction: buildSystemInstruction(session),
@@ -137,19 +143,15 @@ ${session.problemText}
       },
     });
 
-    let content = response.text ?? "";
-    // LaTeX記法を完全除去
-    const L = "\uE001", R = "\uE002";
-    content = content.replace(/&#36;/g, "$").replace(/\\\(/g, L).replace(/\\\)/g, R);
-    for (let i = 0; i < 10; i++) {
-      const prev = content;
-      content = content
-        .replace(/\$+([^$]*?)\$+/g, "$1")
-        .replace(new RegExp(L + "([\\s\\S]*?)" + R, "g"), "$1");
-      if (content === prev) break;
+    const rawContent = response.text ?? "";
+    if (!rawContent.trim()) {
+      return NextResponse.json(
+        { error: "解説を生成できませんでした。もう一度お試しください。" },
+        { status: 502 }
+      );
     }
-    content = content.replace(/[\$＄﹩\u0024\uFF04\uFE69]/g, "");
-    content = normalizeMathSymbols(content);
+    // LaTeX・Markdown 記法を除去し、× ÷ 表記に揃える
+    const content = cleanExplanation(rawContent);
     const isComplete = content.includes("【解答完了】");
     const cleanContent = content.replace(/【解答完了】/g, "").trim();
 
@@ -171,10 +173,13 @@ ${session.problemText}
                 role: "user" as const,
                 content: `この問題を、全科目共通ルールに従い1ステップずつ解説してください。いきなり答えを出さないこと。${userContent}`,
               },
-              { role: "assistant" as const, content: content },
+              { role: "assistant" as const, content },
             ],
     });
   } catch (err) {
+    if (err instanceof GenAIRequestError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
     console.error(err);
     return NextResponse.json(
       { error: "解説の取得に失敗しました" },

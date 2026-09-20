@@ -2,6 +2,38 @@
 
 import { useRef, useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+
+// 送信画像の長辺の上限(px)。Gemini の読み取り精度と送信サイズのバランス
+const MAX_IMAGE_EDGE = 1600;
+
+/**
+ * 選択された画像ファイルを縮小して JPEG の data URL にする。
+ * スマホの写真(数MB)をそのまま base64 で送ると API の上限を超えるため。
+ */
+async function fileToResizedDataUrl(file: File): Promise<string> {
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error("image load failed"));
+      el.src = objectUrl;
+    });
+    const { naturalWidth: w, naturalHeight: h } = img;
+    if (!w || !h) throw new Error("invalid image");
+    const ratio = Math.min(1, MAX_IMAGE_EDGE / Math.max(w, h));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(w * ratio);
+    canvas.height = Math.round(h * ratio);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("canvas unavailable");
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.85);
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
 
 export default function CapturePage() {
   const router = useRouter();
@@ -30,6 +62,14 @@ export default function CapturePage() {
     return () => cancelAnimationFrame(id);
   }, [isCapturing]);
 
+  // ページを離れるときにカメラを確実に停止する（戻るボタンや画面遷移でカメラが点いたままになるのを防ぐ）
+  useEffect(() => {
+    return () => {
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    };
+  }, []);
+
   const startCamera = useCallback(async () => {
     setError(null);
     try {
@@ -37,19 +77,24 @@ export default function CapturePage() {
       let stream: MediaStream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment", width: { ideal: 1280 } },
+          video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } },
           audio: false,
         });
       } catch {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 1280 } },
+          video: { width: { ideal: 1920 }, height: { ideal: 1080 } },
           audio: false,
         });
       }
       streamRef.current = stream;
       setIsCapturing(true);
     } catch (err) {
-      setError("カメラにアクセスできません。カメラの許可を確認してください。");
+      const insecure = typeof window !== "undefined" && !window.isSecureContext;
+      setError(
+        !navigator.mediaDevices?.getUserMedia || insecure
+          ? "この環境ではカメラを使えません（HTTPS が必要です）。「ギャラリーから選択」をご利用ください。"
+          : "カメラにアクセスできません。カメラの許可を確認するか、「ギャラリーから選択」をご利用ください。"
+      );
       console.error(err);
     }
   }, []);
@@ -72,18 +117,30 @@ export default function CapturePage() {
 
     const vw = video.videoWidth;
     const vh = video.videoHeight;
+    if (!vw || !vh) {
+      setError("カメラ映像の準備中です。少し待ってからもう一度撮影してください。");
+      return;
+    }
     const scale = Math.max(0.35, Math.min(1, frameScale));
 
-    // アスペクト比に応じてクロップ領域を計算（横長=数学向け、縦長=長文向け）
-    const aspectRatios = {
-      square: { w: 1, h: 1 },
-      landscape: { w: 2, h: 1 },  // 横長：数式・横書き問題向け
-      portrait: { w: 1, h: 2 },   // 縦長：長文・縦書き向け
-    };
-    const { w: aw, h: ah } = aspectRatios[frameAspect];
-    const maxDim = Math.min(vw / aw, vh / ah) * scale;
-    const cw = Math.floor(maxDim * aw);
-    const ch = Math.floor(maxDim * ah);
+    // 画面に表示されている白い枠と「同じ範囲」を切り出す。
+    // <video> は object-cover で表示されているため、表示領域→映像座標の変換が必要。
+    const dispW = video.clientWidth || vw;
+    const dispH = video.clientHeight || vh;
+    const coverScale = Math.max(dispW / vw, dispH / vh); // 映像1px が画面上何px か
+    // 白い枠の表示サイズ（JSX 側の style と同じ計算）
+    const frameDispW = frameAspect === "portrait" ? dispW * scale * 0.5 : dispW * scale;
+    const frameRatio = frameAspect === "landscape" ? 2 : frameAspect === "portrait" ? 0.5 : 1; // w/h
+    let frameDispH = frameDispW / frameRatio;
+    let frameW = frameDispW;
+    // 枠が表示領域からはみ出す場合は縮める
+    if (frameDispH > dispH) {
+      frameDispH = dispH;
+      frameW = frameDispH * frameRatio;
+    }
+
+    const cw = Math.min(vw, Math.floor(frameW / coverScale));
+    const ch = Math.min(vh, Math.floor(frameDispH / coverScale));
     const cx = Math.floor((vw - cw) / 2);
     const cy = Math.floor((vh - ch) / 2);
 
@@ -103,14 +160,25 @@ export default function CapturePage() {
   const submitImage = useCallback(async () => {
     if (!capturedImage) return;
     setIsSubmitting(true);
+    setError(null);
     try {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image: capturedImage }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "エラーが発生しました");
+      // 画像が大きすぎる(413)・タイムアウト等で JSON 以外が返った場合も分かりやすいエラーにする
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(
+          data.error ||
+            (res.status === 413
+              ? "画像サイズが大きすぎます。撮影枠を小さくするか、もう一度撮影してください。"
+              : res.status >= 500
+                ? "サーバーが混み合っています。少し待ってからもう一度お試しください。"
+                : "エラーが発生しました")
+        );
+      }
       // サーバーレス対応：sessionStorage に保存してから遷移
       if (typeof window !== "undefined") {
         sessionStorage.setItem(
@@ -129,19 +197,19 @@ export default function CapturePage() {
   return (
     <div className="flex min-h-screen flex-col bg-slate-900">
       <header className="flex items-center gap-4 p-4 text-white">
-        <button
-          onClick={() => router.back()}
+        <Link
+          href="/"
           className="rounded-full p-2 hover:bg-white/10"
           aria-label="戻る"
         >
           ←
-        </button>
+        </Link>
         <h1 className="text-lg font-semibold">問題を撮影</h1>
       </header>
 
       <div className="flex flex-1 flex-col items-center justify-center p-4">
         {error && (
-          <div className="mb-4 w-full rounded-xl bg-red-500/20 p-4 text-red-200">
+          <div className="mb-4 w-full max-w-md rounded-xl bg-red-500/20 p-4 text-red-200" role="alert">
             {error}
           </div>
         )}
@@ -230,18 +298,25 @@ export default function CapturePage() {
                   </button>
                   <label className="cursor-pointer rounded-xl border border-slate-500 px-6 py-3 hover:bg-slate-700">
                     <span>ギャラリーから選択</span>
+                    {/* capture 属性を付けるとギャラリーではなくカメラが開いてしまうため付けない */}
                     <input
                       type="file"
                       accept="image/*"
-                      capture="environment"
                       className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          const reader = new FileReader();
-                          reader.onload = () =>
-                            setCapturedImage(reader.result as string);
-                          reader.readAsDataURL(file);
+                      onChange={async (e) => {
+                        const input = e.target;
+                        const file = input.files?.[0];
+                        if (!file) return;
+                        setError(null);
+                        try {
+                          // スマホの写真はそのままだと大きすぎて送信上限(約4.5MB)を超えるため縮小する
+                          setCapturedImage(await fileToResizedDataUrl(file));
+                        } catch (err) {
+                          console.error(err);
+                          setError("画像を読み込めませんでした。別の画像を選んでください。");
+                        } finally {
+                          // 同じファイルを再選択しても onChange が発火するようにリセット
+                          input.value = "";
                         }
                       }}
                     />
