@@ -6,7 +6,16 @@ import type { GoogleGenAI } from "@google/genai";
  */
 export async function createGoogleGenAI(apiKey: string) {
   const { GoogleGenAI } = await import("@google/genai");
-  return new GoogleGenAI({ apiKey });
+  return new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      // SDK の既定は 503 を最大5回再試行し、1リクエストの待ちも長い。
+      // 混雑している最新モデルで関数全体が60秒タイムアウトになるため、
+      // 再試行はせず、失敗したらすぐ次のモデルへ移す。
+      timeout: 20000,
+      retryOptions: { attempts: 1 },
+    },
+  });
 }
 
 /**
@@ -55,6 +64,12 @@ function getStatus(err: unknown): number {
       if (m) return Number(m[1]);
     }
   }
+  // SDK は 503 を status なしの "Retryable HTTP Error: Service Unavailable" に包む
+  const msg = errorMessage(err).toLowerCase();
+  if (msg.includes("service unavailable") || msg.includes("high demand")) return 503;
+  if (msg.includes("gateway timeout") || msg.includes("timed out")) return 504;
+  if (msg.includes("resource exhausted") || msg.includes("quota")) return 429;
+  if (msg.includes("not found")) return 404;
   return 0;
 }
 
@@ -71,7 +86,8 @@ function errorMessage(err: unknown): string {
  * 400 でも「そのモデルでは使えない」系だけ次のモデルへ回す（APIキー不正は回さない）。
  */
 function isRetryable(status: number, err: unknown): boolean {
-  if (status === 429 || status === 503 || status === 500 || status === 404) return true;
+  if (status === 429 || status === 503 || status === 504 || status === 500 || status === 404) return true;
+  if (errorMessage(err).toLowerCase().includes("retryable http error")) return true;
   if (status !== 400) return false;
   const msg = errorMessage(err).toLowerCase();
   return (
@@ -154,7 +170,7 @@ export async function generateContentWithFallback(
       "quota"
     );
   }
-  if (lastStatus === 503) {
+  if (lastStatus === 503 || lastStatus === 504) {
     throw new GenAIRequestError(
       "AI が混み合っています。少し待ってからもう一度お試しください。",
       503,
