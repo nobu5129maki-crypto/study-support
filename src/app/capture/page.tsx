@@ -40,7 +40,9 @@ export default function CapturePage() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const startingRef = useRef(false);
   const [isCapturing, setIsCapturing] = useState(false);
+  const [isStartingCamera, setIsStartingCamera] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -71,7 +73,12 @@ export default function CapturePage() {
   }, []);
 
   const startCamera = useCallback(async () => {
+    if (startingRef.current) return;
+    startingRef.current = true;
+    setIsStartingCamera(true);
     setError(null);
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
     try {
       // スマホは背面、PCは前面カメラ。environment が使えない場合は user にフォールバック
       let stream: MediaStream;
@@ -96,6 +103,9 @@ export default function CapturePage() {
           : "カメラにアクセスできません。カメラの許可を確認するか、「ギャラリーから選択」をご利用ください。"
       );
       console.error(err);
+    } finally {
+      startingRef.current = false;
+      setIsStartingCamera(false);
     }
   }, []);
 
@@ -195,8 +205,8 @@ export default function CapturePage() {
   }, [capturedImage, router]);
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-900">
-      <header className="flex items-center gap-4 p-4 text-white">
+    <div className="flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-slate-900">
+      <header className="flex shrink-0 items-center gap-4 px-4 pb-4 pt-[max(1rem,env(safe-area-inset-top))] text-white">
         <Link
           href="/"
           className="rounded-full p-2 hover:bg-white/10"
@@ -207,7 +217,8 @@ export default function CapturePage() {
         <h1 className="text-lg font-semibold">問題を撮影</h1>
       </header>
 
-      <div className="flex flex-1 flex-col items-center justify-center p-4">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
+        <div className="m-auto flex w-full max-w-md flex-col items-center">
         {error && (
           <div className="mb-4 w-full max-w-md rounded-xl bg-red-500/20 p-4 text-red-200" role="alert">
             {error}
@@ -288,39 +299,53 @@ export default function CapturePage() {
                 </>
               ) : (
                 <div className="flex aspect-[3/4] w-full flex-col items-center justify-center gap-4 bg-slate-800 text-slate-400">
-                  <span className="text-6xl">📷</span>
-                  <p>カメラを起動して問題を撮影</p>
-                  <button
-                    onClick={startCamera}
-                    className="rounded-xl bg-indigo-600 px-6 py-3 font-medium text-white hover:bg-indigo-500"
-                  >
-                    カメラを起動
-                  </button>
-                  <label className="cursor-pointer rounded-xl border border-slate-500 px-6 py-3 hover:bg-slate-700">
-                    <span>ギャラリーから選択</span>
-                    {/* capture 属性を付けるとギャラリーではなくカメラが開いてしまうため付けない */}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={async (e) => {
-                        const input = e.target;
-                        const file = input.files?.[0];
-                        if (!file) return;
-                        setError(null);
-                        try {
-                          // スマホの写真はそのままだと大きすぎて送信上限(約4.5MB)を超えるため縮小する
-                          setCapturedImage(await fileToResizedDataUrl(file));
-                        } catch (err) {
-                          console.error(err);
-                          setError("画像を読み込めませんでした。別の画像を選んでください。");
-                        } finally {
-                          // 同じファイルを再選択しても onChange が発火するようにリセット
-                          input.value = "";
-                        }
-                      }}
-                    />
-                  </label>
+                  {isStartingCamera ? (
+                    <>
+                      <div
+                        className="h-12 w-12 animate-spin rounded-full border-4 border-slate-600 border-t-indigo-400"
+                        role="status"
+                        aria-label="カメラを起動しています"
+                      />
+                      <p>カメラを起動しています…</p>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-6xl">📷</span>
+                      <p>カメラを起動して問題を撮影</p>
+                      <button
+                        type="button"
+                        onClick={startCamera}
+                        className="rounded-xl bg-indigo-600 px-6 py-3 font-medium text-white hover:bg-indigo-500"
+                      >
+                        カメラを起動
+                      </button>
+                      <label className="cursor-pointer rounded-xl border border-slate-500 px-6 py-3 hover:bg-slate-700">
+                        <span>ギャラリーから選択</span>
+                        {/* capture 属性を付けるとギャラリーではなくカメラが開いてしまうため付けない */}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={async (e) => {
+                            const input = e.target;
+                            const file = input.files?.[0];
+                            if (!file) return;
+                            setError(null);
+                            try {
+                              // スマホの写真はそのままだと大きすぎて送信上限(約4.5MB)を超えるため縮小する
+                              setCapturedImage(await fileToResizedDataUrl(file));
+                            } catch (err) {
+                              console.error(err);
+                              setError("画像を読み込めませんでした。別の画像を選んでください。");
+                            } finally {
+                              // 同じファイルを再選択しても onChange が発火するようにリセット
+                              input.value = "";
+                            }
+                          }}
+                        />
+                      </label>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -361,6 +386,7 @@ export default function CapturePage() {
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
   );

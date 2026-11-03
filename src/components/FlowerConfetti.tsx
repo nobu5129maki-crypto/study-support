@@ -1,20 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const PETALS = ["🌸", "🌺", "🌷", "🌼", "💮", "🪷", "🌸", "🌺"];
 const COUNT = 40;
 
 export function FlowerConfetti({ onComplete }: { onComplete?: () => void }) {
   const [visible, setVisible] = useState(true);
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
 
   useEffect(() => {
     const t = setTimeout(() => {
       setVisible(false);
-      onComplete?.();
+      onCompleteRef.current?.();
     }, 4000);
     return () => clearTimeout(t);
-  }, [onComplete]);
+  }, []);
 
   if (!visible) return null;
 

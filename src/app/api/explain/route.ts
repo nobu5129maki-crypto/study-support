@@ -9,6 +9,7 @@ import { cleanExplanation } from "@/lib/cleanExplanation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 type SessionPayload = {
   problemText: string;

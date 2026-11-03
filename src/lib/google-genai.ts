@@ -13,12 +13,16 @@ export async function createGoogleGenAI(apiKey: string) {
  * 利用するモデルの優先順。
  * 無料枠の上限（429 RESOURCE_EXHAUSTED）はモデルごとに別枠のため、
  * 先頭のモデルが上限に達したら次のモデルで再試行する。
+ *
+ * 2026-11 時点の最新 Flash は gemini-3.8-flash（画像入力対応）。
+ * gemini-3-flash-preview は 2025-12 のプレビュー、gemini-3.5-flash は
+ * gemini-3.6-flash へ自動転送される廃止モデルなので、別枠の予備にならない。
+ * 画像を読む勉強サポートでは、より高価な gemini-4-argon ではなく Flash 系を使う。
  */
 export const MODEL_CANDIDATES = [
-  "gemini-3-flash-preview",
-  // gemini-2.5-flash は新規ユーザーには 404（提供終了）のため、現行モデルを予備にする
+  "gemini-3.8-flash",
   "gemini-3.6-flash",
-  "gemini-3.5-flash",
+  "gemini-3.5-flash-lite",
   "gemini-3.1-flash-lite",
 ] as const;
 
@@ -26,6 +30,8 @@ type GenerateArgs = Omit<
   Parameters<GoogleGenAI["models"]["generateContent"]>[0],
   "model"
 >;
+
+type GenerateConfig = NonNullable<GenerateArgs["config"]>;
 
 /** アプリ側で扱いやすい形にした API エラー */
 export class GenAIRequestError extends Error {
@@ -52,6 +58,54 @@ function getStatus(err: unknown): number {
   return 0;
 }
 
+function errorMessage(err: unknown): string {
+  if (typeof err === "object" && err !== null && "message" in err) {
+    const message = (err as { message?: unknown }).message;
+    if (typeof message === "string") return message;
+  }
+  return "";
+}
+
+/**
+ * 429=無料枠上限, 503/500=混雑, 404=モデル提供終了。
+ * 400 でも「そのモデルでは使えない」系だけ次のモデルへ回す（APIキー不正は回さない）。
+ */
+function isRetryable(status: number, err: unknown): boolean {
+  if (status === 429 || status === 503 || status === 500 || status === 404) return true;
+  if (status !== 400) return false;
+  const msg = errorMessage(err).toLowerCase();
+  return (
+    msg.includes("model") ||
+    msg.includes("not found") ||
+    msg.includes("unsupported") ||
+    msg.includes("unknown")
+  );
+}
+
+function isThinkingRejection(status: number, err: unknown): boolean {
+  return status === 400 && errorMessage(err).toLowerCase().includes("thinking");
+}
+
+/**
+ * 現行 API の思考レベルは "low"。古い SDK の enum は "LOW" なので文字列で渡す。
+ * モデルが拒否した場合は思考指定なしで同じモデルをやり直す。
+ */
+function buildConfig(args: GenerateArgs, withThinking: boolean): GenerateConfig {
+  const base: GenerateConfig = { ...(args.config ?? {}) };
+  if (!withThinking) {
+    delete base.thinkingConfig;
+    return base;
+  }
+  const thinkingConfig = {
+    ...(base.thinkingConfig ?? {}),
+    thinkingLevel: "low",
+  };
+  return {
+    ...base,
+    thinkingConfig: thinkingConfig as GenerateConfig["thinkingConfig"],
+  };
+}
+
 /**
  * 429（無料枠の上限）/ 503（混雑）/ 404（モデル提供終了）のときは次の候補モデルで再試行して生成する。
  * すべて失敗した場合は GenAIRequestError を投げる。
@@ -64,13 +118,30 @@ export async function generateContentWithFallback(
   let lastStatus = 0;
   for (const model of MODEL_CANDIDATES) {
     try {
-      return await ai.models.generateContent({ ...args, model });
+      // Flash の既定思考は medium。解説は短い往復なので low にして待ち時間を抑える。
+      // minimal は 3.8 Flash ではエラーになるため使わない。
+      let response;
+      try {
+        response = await ai.models.generateContent({
+          ...args,
+          model,
+          config: buildConfig(args, true),
+        });
+      } catch (err) {
+        if (!isThinkingRejection(getStatus(err), err)) throw err;
+        console.warn(`[genai] model=${model} thinkingLevel=low を拒否したため思考指定なしで再試行`);
+        response = await ai.models.generateContent({
+          ...args,
+          model,
+          config: buildConfig(args, false),
+        });
+      }
+      console.info(`[genai] model=${model}`);
+      return response;
     } catch (err) {
       lastErr = err;
       lastStatus = getStatus(err);
-      // 429=無料枠上限, 503/500=混雑・一時障害, 404=モデル提供終了 → いずれも次のモデルで再試行
-      const retryable =
-        lastStatus === 429 || lastStatus === 503 || lastStatus === 500 || lastStatus === 404;
+      const retryable = isRetryable(lastStatus, err);
       console.warn(`[genai] model=${model} failed status=${lastStatus}${retryable ? " -> 次のモデルで再試行" : ""}`);
       if (!retryable) break;
     }

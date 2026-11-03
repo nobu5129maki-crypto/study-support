@@ -163,9 +163,9 @@ function ExplainContent() {
   const isFetchingNext = loading && !!explanation;
 
   return (
-    <div className="flex min-h-[100dvh] min-h-screen flex-col bg-gradient-to-b from-sky-50 to-indigo-50">
+    <div className="flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-gradient-to-b from-sky-50 to-indigo-50">
       {showConfetti && <FlowerConfetti onComplete={() => setShowConfetti(false)} />}
-      <header className="flex shrink-0 items-center gap-4 border-b border-slate-200 bg-white/80 p-4 backdrop-blur">
+      <header className="flex shrink-0 items-center gap-4 border-b border-slate-200 bg-white/80 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur">
         <Link
           href="/"
           className="rounded-full p-2 text-slate-600 hover:bg-slate-100"
@@ -174,14 +174,14 @@ function ExplainContent() {
           ←
         </Link>
         <h1 className="text-lg font-semibold text-slate-800">
-          解説（ステップ {stepIndex}）
+          {stepIndex > 0 ? `解説（ステップ ${stepIndex}）` : "解説"}
           {isFetchingNext && (
             <span className="ml-2 inline-block h-2 w-2 animate-pulse rounded-full bg-indigo-500 align-middle" aria-hidden />
           )}
         </h1>
       </header>
 
-      <main className="flex min-h-0 flex-1 flex-col p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+      <main className="flex min-h-0 flex-1 flex-col px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
         {error && (
           <div className="mb-4 shrink-0 rounded-xl bg-red-100 p-4 text-red-700">
             {error}
@@ -204,7 +204,17 @@ function ExplainContent() {
           <>
             {/* min-h-0 + overflow-y で長文を切らず縦スクロール */}
             <div className="relative min-h-0 flex-1">
-              <div className="h-full min-h-[12rem] overflow-y-auto overflow-x-auto rounded-2xl bg-white p-5 shadow-sm sm:p-6">
+              <div className="h-full overflow-y-auto overflow-x-auto rounded-2xl bg-white p-5 shadow-sm sm:p-6">
+                {sessionData ? (
+                  <details className="mb-4 rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                    <summary className="cursor-pointer font-medium text-slate-700">
+                      読み取った問題（{sessionData.subject}）
+                    </summary>
+                    <p className="mt-2 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                      {sessionData.problemText}
+                    </p>
+                  </details>
+                ) : null}
                 <p className="whitespace-pre-wrap break-words text-base leading-relaxed text-slate-800 [overflow-wrap:anywhere]">
                   {explanation}
                 </p>
@@ -212,7 +222,7 @@ function ExplainContent() {
               {/* 「次へ」後も前の文が見える＋進行が分かるオーバーレイ */}
               {isFetchingNext && (
                 <div
-                  className="absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-2xl bg-white/90 px-4 backdrop-blur-[2px]"
+                  className="absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-2xl bg-white/75 px-4 backdrop-blur-[1px]"
                   role="status"
                   aria-live="polite"
                   aria-busy="true"
@@ -230,11 +240,11 @@ function ExplainContent() {
               )}
             </div>
 
-            <div className="mt-4 flex shrink-0 flex-col gap-3">
+            <div className="mt-3 flex shrink-0 flex-col gap-3">
               <p className="text-center text-sm font-medium text-slate-600">
                 {isComplete ? "お疲れさまでした！" : "ここまで理解できたかな？"}
               </p>
-              <div className="flex gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row">
                 <button
                   type="button"
                   onClick={() => fetchExplanation("simplify")}
