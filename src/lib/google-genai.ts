@@ -12,7 +12,7 @@ export async function createGoogleGenAI(apiKey: string) {
       // SDK の既定は 503 を最大5回再試行し、1リクエストの待ちも長い。
       // 混雑している最新モデルで関数全体が60秒タイムアウトになるため、
       // 再試行はせず、失敗したらすぐ次のモデルへ移す。
-      timeout: 20000,
+      timeout: 15000,
       retryOptions: { attempts: 1 },
     },
   });
@@ -57,8 +57,9 @@ export class GenAIRequestError extends Error {
 function getStatus(err: unknown): number {
   if (typeof err === "object" && err !== null) {
     const e = err as { status?: unknown; code?: unknown; message?: unknown };
-    if (typeof e.status === "number") return e.status;
-    if (typeof e.code === "number") return e.code;
+    // DOMException の code（AbortError は 20）を HTTP ステータスと取り違えない
+    if (typeof e.status === "number" && e.status >= 400 && e.status <= 599) return e.status;
+    if (typeof e.code === "number" && e.code >= 400 && e.code <= 599) return e.code;
     if (typeof e.message === "string") {
       const m = e.message.match(/"code"\s*:\s*(\d{3})/);
       if (m) return Number(m[1]);
@@ -67,7 +68,7 @@ function getStatus(err: unknown): number {
   // SDK は 503 を status なしの "Retryable HTTP Error: Service Unavailable" に包む
   const msg = errorMessage(err).toLowerCase();
   if (msg.includes("service unavailable") || msg.includes("high demand")) return 503;
-  if (msg.includes("gateway timeout") || msg.includes("timed out")) return 504;
+  if (msg.includes("gateway timeout") || msg.includes("timed out") || msg.includes("aborted") || msg.includes("abort")) return 504;
   if (msg.includes("resource exhausted") || msg.includes("quota")) return 429;
   if (msg.includes("not found")) return 404;
   return 0;
